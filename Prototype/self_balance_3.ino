@@ -13,6 +13,14 @@
 #define BIN1 17
 #define BIN2 18
 
+// Encoders
+#define ENCA_A 34
+#define ENCA_B 35
+#define ENCB_A 32
+#define ENCB_B 33
+
+#define COUNTS_PER_REV 1980.0f
+
 #define PWM_FREQ       1000
 #define PWM_RESOLUTION 8
 
@@ -29,6 +37,44 @@ float Kd = 0.5f; // switching intensity
 float Kc = 0.05f; // for parabolic change in motor speed
 
 float error, lastError = 0, integral = 0, derivative;
+
+// ---- Encoder state ----
+static const int8_t quadTable[16] = {
+   0, -1,  1,  0,
+   1,  0,  0, -1,
+  -1,  0,  0,  1,
+   0,  1, -1,  0
+};
+
+volatile uint8_t stateA = 0;
+volatile uint8_t stateB = 0;
+volatile long encoderCountA = 0;
+volatile long encoderCountB = 0;
+
+long lastCountA = 0;
+long lastCountB = 0;
+float rpmA = 0.0f;
+float rpmB = 0.0f;
+
+unsigned long lastPrint = 0;
+
+void IRAM_ATTR encoderISR_A() {
+  uint8_t a = digitalRead(ENCA_A);
+  uint8_t b = digitalRead(ENCA_B);
+  uint8_t curr = (a << 1) | b;
+  uint8_t idx = (stateA << 2) | curr;
+  encoderCountA += quadTable[idx];
+  stateA = curr;
+}
+
+void IRAM_ATTR encoderISR_B() {
+  uint8_t a = digitalRead(ENCB_A);
+  uint8_t b = digitalRead(ENCB_B);
+  uint8_t curr = (a << 1) | b;
+  uint8_t idx = (stateB << 2) | curr;
+  encoderCountB += quadTable[idx];
+  stateB = curr;
+}
 
 void mpuWrite(uint8_t reg, uint8_t val) {
   Wire.beginTransmission(MPU_ADDR);
@@ -95,6 +141,17 @@ void setup() {
   ledcAttach(PWMA, PWM_FREQ, PWM_RESOLUTION);
   ledcAttach(PWMB, PWM_FREQ, PWM_RESOLUTION);
 
+  // Encoder pins
+  pinMode(ENCA_A, INPUT);
+  pinMode(ENCA_B, INPUT);
+  pinMode(ENCB_A, INPUT);
+  pinMode(ENCB_B, INPUT);
+
+  attachInterrupt(digitalPinToInterrupt(ENCA_A), encoderISR_A, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ENCA_B), encoderISR_A, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ENCB_A), encoderISR_B, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ENCB_B), encoderISR_B, CHANGE);
+
   lastTime = micros();
 }
 
@@ -116,18 +173,35 @@ void loop() {
   float accelAngle = atan2(ay, az) * 180.0f / PI;
   pitch = ALPHA * (pitch + gx * dt) + (1.0f - ALPHA) * accelAngle;
 
+  // ---- Encoder velocity (counts -> RPM) ----
+  long countA = encoderCountA;
+  long countB = encoderCountB;
+  long deltaA = countA - lastCountA;
+  long deltaB = countB - lastCountB;
+  lastCountA = countA;
+  lastCountB = countB;
+
+  if (dt > 0) {
+    rpmA = (deltaA / COUNTS_PER_REV) / dt * 60.0f;
+    rpmB = (deltaB / COUNTS_PER_REV) / dt * 60.0f;
+  }
+
   // PID
   error = pitch - setpoint;
   integral += error * dt;
   derivative = (error - lastError) / dt;
   lastError = error;
 
-float output = Kp * error + Kc * error * error * error + Kd * derivative;
-setMotors((int)output);
+  float output = Kp * error + Kc * error * error * error + Kd * derivative;
+  setMotors((int)output);
 
-  Serial.print("Pitch: "); Serial.print(pitch);
-  Serial.print("  Error: "); Serial.print(error);
-  Serial.print("  Output: "); Serial.println(output);
-
-  delay(3);
+  // Rate-limited telemetry (replaces delay(3) — keeps loop non-blocking)
+  if (millis() - lastPrint >= 50) {
+    lastPrint = millis();
+    Serial.print("Pitch: "); Serial.print(pitch);
+    Serial.print("  Error: "); Serial.print(error);
+    Serial.print("  Output: "); Serial.print(output);
+    Serial.print("  RPM_A: "); Serial.print(rpmA);
+    Serial.print("  RPM_B: "); Serial.println(rpmB);
+  }
 }
