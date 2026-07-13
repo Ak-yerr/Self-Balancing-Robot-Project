@@ -1,7 +1,8 @@
-# Self-Balancing-Robot
-Two-wheeled self-balancing robot using an ESP32 and MPU-6050 IMU. A hand-coded PID controller processes tilt angle from a complementary filter and drives two DC motors via an L298N to keep the robot upright. Features wireless Bluetooth tuning of PID gains in real time.
+# Self-Balancing Two-Wheeled Robot
 
-The robot is a classic inverted-pendulum balancing robot. An ESP32 reads pitch angle from an IMU, runs a cascade PID control loop, and drives two DC gear motors with encoder feedback to stay upright. The project is currently on Prototype 2. This is a structural redesign built after Prototype 1's tall layout proved unstable.
+**Status: Complete.** Prototype 4 is the final version of this project.
+
+This is an inverted-pendulum balancing robot. An ESP32 reads pitch angle from an IMU, runs a PID control loop, and drives two DC gear motors with quadrature encoder feedback to stay upright. The project went through four hardware prototypes. Prototype 4 is the first to pass all three functionality tests defined for the project, and no further prototype is planned.
 
 ---
 
@@ -10,12 +11,11 @@ The robot is a classic inverted-pendulum balancing robot. An ESP32 reads pitch a
 - [Hardware](#hardware)
 - [Wiring](#wiring)
 - [Chassis Design](#chassis-design)
+- [Testing Results](#testing-results)
 - [Control Architecture](#control-architecture)
 - [Calibration](#calibration)
 - [Software](#software)
 - [Setup](#setup)
-- [Known Issues / In Progress](#known-issues--in-progress)
-- [What's Next](#whats-next)
 
 ---
 
@@ -23,13 +23,12 @@ The robot is a classic inverted-pendulum balancing robot. An ESP32 reads pitch a
 
 | Component | Purpose |
 |---|---|
-| ESP32 DevKitC (HiLetgo, on screw-terminal adapter board) | Main controller. Runs sensor fusion and cascade PID |
+| ESP32 DevKitC (HiLetgo, on screw-terminal adapter board) | Main controller. Runs sensor fusion and PID |
 | MPU-6050 IMU (pre-soldered breakout) | Accelerometer and gyro for pitch angle estimation |
 | TB6612FNG motor driver (pre-soldered breakout) | Dual H-bridge driver for both drive motors |
-| 2x XiaoR Geek XR25-370 gear motors with Hall encoders (280 RPM, 1:45) | Drive wheels and closed-loop velocity feedback |
+| 2x XiaoR Geek XR25-370 gear motors with Hall encoders (280 RPM, 1:45) | Drive wheels and encoder feedback |
 | AKEYSRC LM2596 buck converter | Steps LiPo voltage down to 5V for ESP32 VIN |
-| 3S LiPo, 11.1V, 1400mAh, 50C, XT60 (OVONIC) | Main power source. Upgrade over the original 2S pack |
-| 2S LiPo, 2200mAh, XT60 (Gens Ace) | Original prototype-1-era pack. Superseded |
+| 3S LiPo, 11.1V, 1400mAh, 50C, XT60 (OVONIC) | Main power source |
 | XT60 connector/adapter set | Battery interconnects |
 | HTRC balance charger (2S-3S compatible) | LiPo charging |
 | 400-point breadboard and jumper wires | Prototyping. All signal and power interconnects |
@@ -52,18 +51,18 @@ Alkaline 9V batteries were tested early on. They cannot sustain motor current wi
 |---|---|
 | IMU I2C (SDA/SCL) | 21 / 22 |
 | Motor A (PWM / IN1 / IN2) | 25 / 26 / 27 |
-| Motor B (PWM / IN1 / IN2) | 14 / 12 / 13 |
-| Encoder A (channels 1/2) | 34 / 35 |
-| Encoder B (channels 1/2) | 32 / 33 |
+| Motor B (PWM / IN1 / IN2) | 16 / 17 / 18 |
+| Encoder A (channel A/B) | 34 / 35 |
+| Encoder B (channel A/B) | 32 / 33 |
 
-GPIO12 is an ESP32 strapping pin. It is currently wired to Motor B. It must be HIGH or floating at boot, or the ESP32 fails to flash. Until it is remapped to a non-strapping pin, disconnect Motor B's GPIO12 wire before flashing. Reconnect it afterward.
+Motor B was originally wired to GPIO12, an ESP32 strapping pin, which caused flash failures. It has been remapped to GPIO16/17/18 and no longer conflicts with boot mode selection.
 
 ### Power
 
 - Raw LiPo (3S, 11.1V) goes to TB6612FNG VM for motor power.
 - Raw LiPo also goes to the LM2596 buck converter (set to 5V) then to ESP32 VIN.
 - ESP32 3.3V goes to TB6612FNG VCC/STBY for logic power.
-- Common ground is mandatory. LiPo, ESP32, TB6612FNG, MPU-6050, and both encoders must all share one ground reference. Flat single-surface breadboard layouts can end up with split ground rails by accident. Check this with a multimeter if anything behaves erratically.
+- Common ground is mandatory. LiPo, ESP32, TB6612FNG, MPU-6050, and both encoders all share one ground reference.
 
 ### Decoupling
 
@@ -76,56 +75,78 @@ GPIO12 is an ESP32 strapping pin. It is currently wired to Motor B. It must be H
 
 ### Prototype 1 (retired)
 
-Prototype 1 used a tall, vertical board layout with components stacked above the axle. This put the center of mass high above the wheels. A high center of mass makes an inverted-pendulum robot fall faster and demands more torque and control bandwidth to catch it. Prototype 1 could not be stabilized and was retired.
+A tall, vertical board layout with components stacked above the axle. This put the center of mass high above the wheels. Prototype 1 could not be stabilized and was retired.
 
-### Prototype 2 (current)
+### Prototype 2 (retired)
 
-Prototype 2 uses a flat, single-surface layout.
+A flat, single-surface layout with motors, wheels, and LiPo on the bottom face and electronics on top. This lowered the center of mass close to the axle and improved on Prototype 1, but the body was too short and too flat to absorb bumps. It failed on any terrain other than a hard, even surface.
 
-- Bottom face: motors, wheels, and LiPo. All heavy mass stays low and close to the axle.
-- Top face: buck converter, ESP32, and breadboard.
+### Prototype 3 (retired)
 
-This layout was checked by hand for a natural static balance point before any firmware was written. One was found. That is a good sign the mass distribution favors stable dynamics.
+A refinement of the flat layout. It passed on hardwood but still failed on carpet and bumpy terrain, for the same reason as Prototype 2: the body sat too low and too rigid to tolerate small changes in ground height.
 
-If Prototype 2 fails to balance after full tuning, the fallback plan is a further redesign with a shorter body, a lower center of mass, and larger wheels. Larger wheels reduce the effective angular acceleration for a given tip angle and buy more reaction time.
+### Prototype 4 (final)
+
+Prototype 4 raises the center of mass slightly above where Prototype 2 and 3 held it. This was the key change: a body that is a little taller tolerates small terrain irregularities without oscillating out of control, while staying low enough to keep the balancing problem manageable. Combined with the PID tuning described below, this is the first version to pass sustained balancing, disturbance recovery, and terrain variation.
+
+---
+
+## Testing Results
+
+Three functionality tests were defined for this project: sustained balancing, disturbance recovery, and terrain performance. Prototype 4 is the first to pass all three.
+
+### Balancing capability
+
+Requirement: 60 seconds of continuously sustained balancing.
+
+Five trials were run. The first and third ran for around 100 seconds, well past every result from Prototypes 1 through 3. The second, fourth, and fifth trials did not fall at all. The robot found a balance point where the motors stopped moving because it had settled at an angle of perfect balance. Earlier prototypes oscillated continuously until they eventually fell.
+
+### Disturbance recovery
+
+This was the hardest of the three tests. It measures whether the robot can recover from a physical "tap" rather than just hold still. Prototype 4 was the first to show an actual corrective PID response instead of static balance alone.
+
+Across five tap trials, it recovered on three and fell on two. The three successful recoveries each stabilized within about five seconds. Earlier prototypes either had no corrective response at all, or overcorrected and fell the opposite way. This result is a real success with a real limitation. The motors and chassis available within this project's budget cap how much further the recovery response can be pushed.
+
+### Terrain performance
+
+Requirement: balance on hardwood, an even wool carpet, and a bumpy table carpet.
+
+- Prototypes 1 and 2 failed on all three surfaces.
+- Prototype 3 passed only on hardwood.
+- Prototype 4 passed on all three, including the bumpy carpet.
+
+The flat, low-body design used in Prototypes 2 and 3 was too short to tolerate any oscillation caused by uneven ground. Raising the center of mass slightly in Prototype 4 was the change that fixed this.
+
+### Summary
+
+Prototype 4 moved from technically balancing on a flat floor to balancing under real-world variation: sustained holds, physical disturbances, and rough terrain. That result marks the end of this project.
 
 ---
 
 ## Control Architecture
 
-The robot uses a cascade PID structure, standard for self-balancing robots.
+The final control law is a single PID loop running directly on pitch angle, with a cubic error term added for a stronger response at larger angles:
 
 ```
-                 ┌─────────────────┐
-IMU angle ──────▶│  Outer loop:    │──▶ target wheel RPM (capped ~270 RPM)
-                 │  Angle PID      │
-                 └─────────────────┘
-                          │
-              ┌───────────┴───────────┐
-              ▼                       ▼
-     ┌──────────────────┐   ┌──────────────────┐
-     │ Inner loop:       │   │ Inner loop:       │
-     │ Motor A velocity  │   │ Motor B velocity  │
-     │ PID (encoder fb)  │   │ PID (encoder fb)  │
-     └──────────────────┘   └──────────────────┘
-              │                       │
-              ▼                       ▼
-         Motor A PWM             Motor B PWM
+error   = pitch - setpoint
+output  = Kp * error + Kc * error^3 + Kd * derivative
 ```
 
-The outer loop takes the complementary-filtered pitch angle and outputs a target wheel RPM. Each inner loop takes that target RPM and the motor's actual encoder-derived RPM and outputs a PWM duty cycle. Motor B's direction is inverted in software by swapping IN1/IN2 logic, not by swapping motor leads.
+`setpoint` is the robot's measured upright angle (not necessarily 0, since the IMU is never perfectly level relative to the chassis) and is calibrated after the first boot. `Kc` scales how much more aggressively the robot corrects as the tilt grows, rather than responding linearly across the whole range. `Ki` exists in the code but is left at 0 for now.
+
+Quadrature encoders on both motors are decoded in hardware interrupts and converted to RPM every loop. This RPM is used as telemetry to verify motor behavior while tuning, rather than as a second feedback term in the final control law.
 
 ### Angle estimation
 
 Pitch is estimated with a complementary filter:
 
 ```
-angle = ALPHA * (angle + gyroX * dt) + (1 - ALPHA) * atan2(ay, az)
+pitch = ALPHA * (pitch + gx * dt) + (1 - ALPHA) * accelAngle
 ```
 
-ALPHA is 0.98. This favors the gyro's short-term accuracy while using the accelerometer to correct long-term drift. The MPU-6050 is set to +/-2g accelerometer range and +/-250 deg/s gyro range.
+ALPHA is 0.98. This favors the gyro's short-term accuracy while using the accelerometer to correct long-term drift. Accelerometer and gyro registers are read directly over I2C rather than through a library.
 
-The MPU-6050 must be mounted low on the chassis and centered directly over the axle. Mounting it off-axis introduces centripetal and tangential acceleration into the accelerometer reading during movement. This corrupts the angle estimate independent of actual tilt.
+The MPU-6050 is mounted low on the chassis and centered directly over the axle. Mounting it off-axis introduces centripetal and tangential acceleration into the accelerometer reading during movement, which corrupts the angle estimate independent of actual tilt.
 
 ---
 
@@ -133,230 +154,213 @@ The MPU-6050 must be mounted low on the chassis and centered directly over the a
 
 ### Gyro bias calibration (every boot)
 
-The gyro has a small DC bias that varies between power cycles. On every boot, the firmware runs a 1000-sample calibration routine with the robot held stationary and level. This computes and subtracts the offset. Skipping this step causes the angle estimate to drift even when the robot isn't moving.
+The gyro has a small DC bias that varies between power cycles. On every boot, the firmware averages 1000 raw gyro-X samples with the robot held stationary and level, and subtracts that average as an offset. Skipping this step causes the angle estimate to drift even when the robot isn't moving.
 
-### Outer loop (angle PID) tuning
+### PID tuning
 
-1. Prop the robot upright with motors disabled and angle PID gains near zero.
-2. Increase Kp until the robot rocks or twitches around vertical.
-3. Add Kd to damp overshoot.
-4. Add a small Ki only if there is a persistent steady-state lean. Keep it small. Too much integral windup causes slow oscillation.
-
-### Inner loop (velocity PID) tuning
-
-Tune the two motor velocity loops independently first. Command a fixed target RPM directly and bypass the outer loop. Verify each motor tracks it cleanly via encoder feedback before closing the outer loop. This avoids compounding two untuned loops at once.
+1. Start with `Kp`, `Ki`, `Kd`, and `Kc` at 0 and the robot propped upright.
+2. Set `setpoint` to the pitch value printed over serial when the robot is held level and balanced by hand. This is rarely exactly 0.
+3. Increase `Kp` until the robot visibly reacts to being tilted.
+4. Add `Kd` to damp oscillation.
+5. Add a small `Kc` if the robot needs a stronger response at larger tilt angles without over-reacting near the setpoint.
+6. Leave `Ki` at 0 unless a persistent steady-state lean shows up, and keep it small if used.
 
 ### Encoder scaling
 
-11 PPR at the motor shaft, times 45:1 gearbox, times 4 for quadrature, equals 1980 counts per output-shaft revolution.
+Each encoder is decoded on every A/B transition using a quadrature lookup table, giving full 4x resolution: 1980 counts per output-shaft revolution.
 
-RPM = (count_delta / 1980) * (60 / dt_seconds)
+```
+rpm = (count_delta / 1980) / dt * 60
+```
 
 ---
 
 ## Software
 
-### Staged testing approach
-
-Firmware is validated in stages. Each stage has an explicit pass/fail check before moving to the next.
-
-1. IMU only. Read raw accel/gyro and confirm calibration and filter output track physical tilt.
-2. Motors only. Confirm both motors spin correctly in both directions at commanded PWM.
-3. IMU and motors, no control loop. Confirm no interference between subsystems.
-4. Full balance loop. Cascade PID closed. Robot attempts to self-balance.
-
-This approach avoids compounded-fault diagnosis. A robot that won't balance is much harder to debug if you don't yet know whether the IMU, the motors, or the control loop is at fault.
-
-### Pin and gain configuration
-
-All pins and tunable gains live in one config block at the top of the sketch:
+### Pin and constant definitions
 
 ```cpp
+#define MPU_ADDR 0x68
+#define ALPHA 0.98f
+
 // Motor A
-#define MA_PWM 25
-#define MA_IN1 26
-#define MA_IN2 27
+#define AIN1 26
+#define AIN2 27
+#define PWMA 25
 
 // Motor B
-#define MB_PWM 14
-#define MB_IN1 12   // strapping pin, disconnect before flashing
-#define MB_IN2 13
+#define PWMB 16
+#define BIN1 17
+#define BIN2 18
 
 // Encoders
-#define ENC_A1 34
-#define ENC_A2 35
-#define ENC_B1 32
-#define ENC_B2 33
+#define ENCA_A 34
+#define ENCA_B 35
+#define ENCB_A 32
+#define ENCB_B 33
 
-const float ALPHA = 0.98;
-const float MAX_RPM = 270.0;
-const int   COUNTS_PER_REV = 1980;
+#define COUNTS_PER_REV 1980.0f
 
-// Outer loop: angle -> target RPM
-float angleKp = 0, angleKi = 0, angleKd = 0;
+#define PWM_FREQ       1000
+#define PWM_RESOLUTION 8
 
-// Inner loops: RPM -> PWM
-float velKp = 0, velKi = 0, velKd = 0;
+float setpoint = 82.5f;  // upright angle, adjust after first boot
+float Kp = 30.0f;
+float Ki = 0.0f;
+float Kd = 0.5f;
+float Kc = 0.05f;
 ```
 
-### Encoder counting
+### Encoder decoding
 
-Each encoder channel is read on a hardware interrupt. The ISR only increments a counter. All math happens in the main loop:
+Full quadrature decoding via a state-transition lookup table, updated in interrupt service routines:
 
 ```cpp
-volatile long countA = 0;
-volatile long countB = 0;
+static const int8_t quadTable[16] = {
+   0, -1,  1,  0,
+   1,  0,  0, -1,
+  -1,  0,  0,  1,
+   0,  1, -1,  0
+};
 
-void IRAM_ATTR isrEncoderA() {
-  int a = digitalRead(ENC_A1);
-  int b = digitalRead(ENC_A2);
-  countA += (a == b) ? 1 : -1;
+volatile uint8_t stateA = 0;
+volatile uint8_t stateB = 0;
+volatile long encoderCountA = 0;
+volatile long encoderCountB = 0;
+
+void IRAM_ATTR encoderISR_A() {
+  uint8_t a = digitalRead(ENCA_A);
+  uint8_t b = digitalRead(ENCA_B);
+  uint8_t curr = (a << 1) | b;
+  uint8_t idx = (stateA << 2) | curr;
+  encoderCountA += quadTable[idx];
+  stateA = curr;
 }
 
-void IRAM_ATTR isrEncoderB() {
-  int a = digitalRead(ENC_B1);
-  int b = digitalRead(ENC_B2);
-  countB += (a == b) ? -1 : 1;   // inverted for Motor B orientation
+void IRAM_ATTR encoderISR_B() {
+  uint8_t a = digitalRead(ENCB_A);
+  uint8_t b = digitalRead(ENCB_B);
+  uint8_t curr = (a << 1) | b;
+  uint8_t idx = (stateB << 2) | curr;
+  encoderCountB += quadTable[idx];
+  stateB = curr;
 }
 ```
 
-### Gyro calibration
+### IMU register access
 
-Runs once at boot with the robot held level and still:
+The MPU-6050 is read directly over I2C without a library:
 
 ```cpp
-float gyroXoffset = 0;
+void mpuWrite(uint8_t reg, uint8_t val) {
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(reg);
+  Wire.write(val);
+  Wire.endTransmission();
+}
+
+int16_t readWord(uint8_t reg) {
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(reg);
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU_ADDR, 2, true);
+  return (Wire.read() << 8) | Wire.read();
+}
 
 void calibrateGyro() {
-  long sum = 0;
-  for (int i = 0; i < 1000; i++) {
-    sum += mpu.getRotationX();
-    delayMicroseconds(500); // fine here, runs once before the control loop starts
+  long sumX = 0;
+  const int samples = 1000;
+  for (int i = 0; i < samples; i++) {
+    sumX += readWord(0x43);
+    delay(1); // fine here, runs once before the control loop starts
   }
-  gyroXoffset = sum / 1000.0;
+  gyroXOffset = sumX / (float)samples;
 }
 ```
 
-### Complementary filter
+### Motor output
 
 ```cpp
-float angle = 0;
+void setMotors(int speed) {
+  speed = constrain(speed, -255, 255);
 
-float updateAngle(float ax, float ay, float az, float gyroXraw, float dt) {
-  float gyroX = (gyroXraw - gyroXoffset) * (250.0 / 32768.0); // deg/s
-  float accelAngle = atan2(ay, az) * 180.0 / PI;
-  angle = ALPHA * (angle + gyroX * dt) + (1 - ALPHA) * accelAngle;
-  return angle;
+  if (speed > 0) {
+    digitalWrite(AIN1, HIGH); digitalWrite(AIN2, LOW);
+    ledcWrite(PWMA, speed);
+    digitalWrite(BIN1, LOW); digitalWrite(BIN2, HIGH);  // B inverted
+    ledcWrite(PWMB, speed);
+  } else if (speed < 0) {
+    digitalWrite(AIN1, LOW); digitalWrite(AIN2, HIGH);
+    ledcWrite(PWMA, -speed);
+    digitalWrite(BIN1, HIGH); digitalWrite(BIN2, LOW);  // B inverted
+    ledcWrite(PWMB, -speed);
+  } else {
+    digitalWrite(AIN1, LOW); digitalWrite(AIN2, LOW); ledcWrite(PWMA, 0);
+    digitalWrite(BIN1, LOW); digitalWrite(BIN2, LOW); ledcWrite(PWMB, 0);
+  }
 }
 ```
 
-### Cascade PID
+### Main loop
+
+No `delay()` runs inside `loop()`. Serial telemetry is rate-limited with `millis()` instead:
 
 ```cpp
-float outerLoop(float angle, float dt) {
-  static float integral = 0, lastError = 0;
-  float error = 0 - angle;           // target angle is 0 (upright)
-  integral += error * dt;
-  float derivative = (error - lastError) / dt;
-  lastError = error;
-
-  float targetRPM = angleKp * error + angleKi * integral + angleKd * derivative;
-  return constrain(targetRPM, -MAX_RPM, MAX_RPM);
-}
-
-float innerLoop(float targetRPM, float actualRPM, float dt,
-                 float &integral, float &lastError) {
-  float error = targetRPM - actualRPM;
-  integral += error * dt;
-  float derivative = (error - lastError) / dt;
-  lastError = error;
-
-  float pwm = velKp * error + velKi * integral + velKd * derivative;
-  return constrain(pwm, -255, 255);
-}
-```
-
-### Hard rule: no delay() in the control loop
-
-delay() blocks the entire loop, including the balance calculation. A robot that gets delay()'d for even a few hundred milliseconds falls during that window. All timing uses millis()/micros() for non-blocking rate-limiting. delay() is never used in the main loop.
-
-```cpp
-unsigned long lastLoopTime = 0;
-
 void loop() {
   unsigned long now = micros();
-  float dt = (now - lastLoopTime) / 1e6;
-  lastLoopTime = now;
+  float dt = (now - lastTime) / 1000000.0f;
+  lastTime = now;
 
-  float angle = updateAngle(ax, ay, az, gyroXraw, dt);
-  float targetRPM = outerLoop(angle, dt);
+  int16_t rawAx = readWord(0x3B);
+  int16_t rawAy = readWord(0x3D);
+  int16_t rawAz = readWord(0x3F);
+  int16_t rawGx = readWord(0x43);
 
-  float rpmA = (countA / (float)COUNTS_PER_REV) * (60.0 / dt);
-  float rpmB = (countB / (float)COUNTS_PER_REV) * (60.0 / dt);
-  countA = 0;
-  countB = 0;
+  float ax = rawAx / 16384.0f;
+  float ay = rawAy / 16384.0f;
+  float az = rawAz / 16384.0f;
+  float gx = (rawGx - gyroXOffset) / 131.0f;
 
-  float pwmA = innerLoop(targetRPM, rpmA, dt, intA, lastErrA);
-  float pwmB = innerLoop(-targetRPM, rpmB, dt, intB, lastErrB); // Motor B inverted
+  float accelAngle = atan2(ay, az) * 180.0f / PI;
+  pitch = ALPHA * (pitch + gx * dt) + (1.0f - ALPHA) * accelAngle;
 
-  driveMotor(MA_PWM, MA_IN1, MA_IN2, pwmA);
-  driveMotor(MB_PWM, MB_IN1, MB_IN2, pwmB);
-  // no delay() here, ever
+  long countA = encoderCountA;
+  long countB = encoderCountB;
+  long deltaA = countA - lastCountA;
+  long deltaB = countB - lastCountB;
+  lastCountA = countA;
+  lastCountB = countB;
+
+  if (dt > 0) {
+    rpmA = (deltaA / COUNTS_PER_REV) / dt * 60.0f;
+    rpmB = (deltaB / COUNTS_PER_REV) / dt * 60.0f;
+  }
+
+  error = pitch - setpoint;
+  integral += error * dt;
+  derivative = (error - lastError) / dt;
+  lastError = error;
+
+  float output = Kp * error + Kc * error * error * error + Kd * derivative;
+  setMotors((int)output);
+
+  if (millis() - lastPrint >= 50) {
+    lastPrint = millis();
+    Serial.print("Pitch: "); Serial.print(pitch);
+    Serial.print("  Error: "); Serial.print(error);
+    Serial.print("  Output: "); Serial.print(output);
+    Serial.print("  RPM_A: "); Serial.print(rpmA);
+    Serial.print("  RPM_B: "); Serial.println(rpmB);
+  }
 }
 ```
-
-### OTA
-
-Over-the-air updates are not in use during active development. The added complexity isn't worth it right now. OTA would also sacrifice the Serial monitor connection needed for live tuning and debugging.
 
 ---
 
 ## Setup
 
 1. Wire the robot per [Wiring](#wiring) above. Double-check common ground across every subsystem.
-2. Before first flash, disconnect Motor B's GPIO12 connection.
-3. Confirm the pin block at the top of the sketch matches your wiring:
-
-```cpp
-#define MA_PWM 25
-#define MA_IN1 26
-#define MA_IN2 27
-#define MB_PWM 14
-#define MB_IN1 12   // disconnected during flashing
-#define MB_IN2 13
-#define ENC_A1 34
-#define ENC_A2 35
-#define ENC_B1 32
-#define ENC_B2 33
-```
-
-4. Flash the firmware via USB with the Arduino IDE or PlatformIO.
-5. Reconnect Motor B's GPIO12 wire.
-6. Run the staged tests in order. Confirm pass criteria at each stage before proceeding. Start with all PID gains at zero:
-
-```cpp
-float angleKp = 0, angleKi = 0, angleKd = 0;
-float velKp = 0, velKi = 0, velKd = 0;
-```
-
-7. Tune the inner velocity PID loops first, then the outer angle PID loop, adjusting the gain values above and re-flashing between tests.
-
----
-
-## Known Issues / In Progress
-
-- ESP32 flash failure. Traced to GPIO12 being used for Motor B. Current workaround is disconnecting Motor B before flashing. Long-term fix is remapping to a non-strapping GPIO.
-- LM2596 buck converter heats instantly on power-up. This is a short-circuit signature, likely reversed IN/OUT terminals or a stray wire bridging pins. If a component heats instantly, disconnect power immediately. Do not continue troubleshooting live.
-- TB6612FNG breakout short circuit. VCC/GND pins landed in the wrong breadboard rows and caused the ESP32 to overheat. Diagnosis is in progress. Needs full re-verification of the breadboard row mapping before repowering.
-- Encoder velocity feedback is not yet integrated into the cascade PID loop.
-- Full closed-loop balance tuning has not been attempted yet. Blocked on resolving the wiring faults above.
-
----
-
-## What's Next
-
-- Resolve the TB6612FNG wiring short and confirm clean power delivery
-- Finish wiring encoder velocity feedback into the cascade PID loop
-- Run a full self-balancing PID tuning session
-- If Prototype 2 fails entirely, redesign with a shorter body, lower center of mass, and larger wheels
-- Next projects in the series: an MPPT solar charge controller, and a Flappy Bird business card PCB
+2. Flash the firmware via USB with the Arduino IDE.
+3. Open Serial Monitor at 115200 baud and hold the robot upright and level by hand. Read the printed pitch value and set `setpoint` to that value.
+4. Re-flash with the updated `setpoint`.
+5. Stand the robot up and let it balance. Tune `Kp`, `Kd`, and `Kc` as needed per [Calibration](#calibration), re-flashing between changes.
