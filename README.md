@@ -372,3 +372,49 @@ void loop() {
 5. Stand the robot up and let it balance. Tune `Kp`, `Kd`, and `Kc` as needed per [Calibration](#calibration), re-flashing between changes.
 
 This same procedure is what carried the project from an ESP32 flashing with the wrong motor pin to a robot that balances on carpet and recovers from a shove. None of the individual steps are complicated on their own. The setpoint calibration corrects for a physical mounting quirk, the gyro calibration corrects for sensor drift, and the PID tuning corrects for everything else, chassis geometry, motor characteristics, and floor surface, that can't be known ahead of time and has to be found by testing. Getting all three right at once, on hardware built from breadboard and hobby motors rather than purpose-built parts, is what the four prototype iterations were actually for.
+
+
+---
+
+## Appendix: Cascade PID Variant
+
+The single-loop architecture documented above is the one that passed all three official Prototype 4 tests (sustained balance, disturbance recovery, terrain variation) and remains this project's documented final control law. A cascade variant was also built and run successfully on the same hardware, and is included here for reference. It has not been run through the same formal three-test suite, so it is not a replacement for the architecture above — just a documented alternative that works.
+
+### Why a cascade loop
+
+The single-loop version computes PWM directly from angle error. It reads encoder RPM as telemetry but never feeds it back into the control law, so the two wheels can end up doing slightly different things under the same PWM command due to friction and motor-to-motor variation. The cascade version closes that gap by adding a second control stage that corrects each wheel toward a common speed target.
+
+### Structure
+
+Two loops run every pass instead of one:
+
+- **Outer loop (angle → target RPM).** Same error calculation as the single-loop version (`Kp`, `Kd`, `Kc` on pitch error), but instead of driving PWM directly, the output is treated as a target wheel speed and clamped to ±270 RPM.
+
+  ```
+  angleError  = pitch - setpoint
+  targetRPM   = Kp_outer * angleError + Kc_outer * angleError^3 + Kd_outer * derivative
+  targetRPM   = clamp(targetRPM, -270, 270)
+  ```
+
+- **Inner loop (RPM → PWM), one per motor.** Each motor independently compares the shared `targetRPM` against its own measured RPM and produces its own PWM value, so the two wheels are corrected independently rather than assumed identical.
+
+  ```
+  rpmError = targetRPM - measuredRPM
+  pwm      = Kp_inner * rpmError + Ki_inner * integral(rpmError) + Kd_inner * derivative(rpmError)
+  ```
+
+  The inner-loop integral term is clamped (±200) to prevent windup if a wheel is briefly stalled or lagging.
+
+### What changed in code terms
+
+- `setMotors(speed)` was split into `driveMotor(isMotorA, pwmVal)`, called once per motor, since each wheel now gets an independently computed PWM value instead of a shared one.
+- Encoder-derived RPM, previously telemetry-only, is now read inside the control law itself as the inner loop's feedback signal.
+- Six new tuning constants were added: `Kp_outer`, `Ki_outer`, `Kd_outer`, `Kc_outer` (outer loop) and `Kp_inner`, `Ki_inner`, `Kd_inner` (inner loop, shared by both motors).
+
+### Tuning order
+
+Unlike the single-loop version, the inner loop should be tuned first, with the robot propped up off the ground so wheel speed can be checked in isolation against a manually set target RPM. Only once the inner loop tracks a target speed cleanly should the outer (angle) loop be tuned on the ground, following the same procedure as [PID tuning](#pid-tuning) above but applied to `Kp_outer`/`Kd_outer`/`Kc_outer`.
+
+### Status
+
+Runs successfully on Prototype 4 hardware with no firmware or wiring changes beyond the control loop itself. Not yet evaluated against the formal sustained-balance, disturbance-recovery, and terrain test suite used to validate the single-loop version above.
