@@ -177,7 +177,11 @@ rpm = (count_delta / 1980) / dt * 60
 
 ## Software
 
+The firmware is a single Arduino sketch with no external motor or IMU libraries. Everything from I2C register reads to quadrature decoding to PID output is written directly against the ESP32 core APIs. This keeps the loop predictable and avoids library overhead in a control loop where timing matters. The sections below walk through the sketch roughly in the order it executes: constants and pins first, then encoder decoding and IMU access that run continuously in the background, then the motor driver, then the main loop that ties all of it together.
+
 ### Pin and constant definitions
+
+Every pin number and tunable value lives at the top of the sketch in one place, so retuning or rewiring never means hunting through the rest of the code. `setpoint` is the pitch angle the robot treats as "upright." It is rarely exactly 0, since the IMU's mounting angle is never perfectly level relative to the chassis, so this value gets measured and set per unit after the first boot. `Kp`, `Ki`, `Kd`, and `Kc` are the four PID terms used in the main loop, covered in more detail in [Control Architecture](#control-architecture):
 
 ```cpp
 #define MPU_ADDR 0x68
@@ -213,7 +217,7 @@ float Kc = 0.05f;
 
 ### Encoder decoding
 
-Full quadrature decoding via a state-transition lookup table, updated in interrupt service routines:
+Each motor's encoder outputs two channels, A and B, that shift phase relative to each other depending on direction. Reading only one channel gives 1x resolution and no direction information. This firmware reads both channels on every edge and combines the previous 2-bit state with the current 2-bit state into a 4-bit index, which is looked up in `quadTable` to get a signed step of -1, 0, or +1. This gives full 4x quadrature resolution and correct direction sign in one lookup, with no branching logic inside the interrupt itself. Both ISRs run on every edge of both channels, so the count updates on every transition rather than only on rising edges of one channel:
 
 ```cpp
 static const int8_t quadTable[16] = {
@@ -249,7 +253,7 @@ void IRAM_ATTR encoderISR_B() {
 
 ### IMU register access
 
-The MPU-6050 is read directly over I2C without a library:
+The MPU-6050 is read directly over I2C without a library. `mpuWrite()` writes a single byte to a register, used at boot to wake the sensor and set its accelerometer and gyro ranges. `readWord()` reads a 16-bit value from a register pair, used both for the raw sensor axes in the main loop and for the calibration routine below. `calibrateGyro()` runs once at boot with the robot held level and still, averaging 1000 raw gyro-X samples to find the sensor's DC bias. That bias, `gyroXOffset`, is subtracted from every gyro reading afterward so the angle estimate doesn't slowly drift even when the robot isn't moving. The `delay(1)` inside this function is safe because it only runs once before the control loop starts:
 
 ```cpp
 void mpuWrite(uint8_t reg, uint8_t val) {
@@ -280,6 +284,8 @@ void calibrateGyro() {
 
 ### Motor output
 
+`setMotors()` takes a single signed speed value from -255 to 255 and drives both motors from it. The sign sets direction by toggling each motor's IN1/IN2 pins, and the magnitude is written to the PWM channel with `ledcWrite()`. Motor B's IN1/IN2 logic is flipped relative to Motor A so that a positive `speed` drives both wheels the same physical direction, since the two motors are mounted facing opposite ways on the chassis. This keeps the direction inversion contained to one function instead of scattered through the main loop:
+
 ```cpp
 void setMotors(int speed) {
   speed = constrain(speed, -255, 255);
@@ -303,7 +309,7 @@ void setMotors(int speed) {
 
 ### Main loop
 
-No `delay()` runs inside `loop()`. Serial telemetry is rate-limited with `millis()` instead:
+`loop()` runs continuously with no `delay()` anywhere in it, since blocking the loop for even a few hundred milliseconds is long enough for the robot to fall. Each pass does five things in order: measures `dt` since the last pass, reads the IMU and updates the pitch estimate with the complementary filter, reads the encoder counts and converts them to RPM for telemetry, runs the PID calculation and sends the result to `setMotors()`, and finally prints telemetry, but only often enough to be readable rather than on every single pass. That last part is what `millis() - lastPrint >= 50` is doing: it rate-limits Serial output to about 20 times a second without ever blocking the loop the way `delay()` would:
 
 ```cpp
 void loop() {
@@ -364,3 +370,5 @@ void loop() {
 3. Open Serial Monitor at 115200 baud and hold the robot upright and level by hand. Read the printed pitch value and set `setpoint` to that value.
 4. Re-flash with the updated `setpoint`.
 5. Stand the robot up and let it balance. Tune `Kp`, `Kd`, and `Kc` as needed per [Calibration](#calibration), re-flashing between changes.
+
+This same procedure is what carried the project from an ESP32 flashing with the wrong motor pin to a robot that balances on carpet and recovers from a shove. None of the individual steps are complicated on their own. The setpoint calibration corrects for a physical mounting quirk, the gyro calibration corrects for sensor drift, and the PID tuning corrects for everything else, chassis geometry, motor characteristics, and floor surface, that can't be known ahead of time and has to be found by testing. Getting all three right at once, on hardware built from breadboard and hobby motors rather than purpose-built parts, is what the four prototype iterations were actually for.
