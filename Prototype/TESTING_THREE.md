@@ -1,4 +1,4 @@
-# Prototype #3
+# Prototype #3 & #4
 At last, the self-balancing robot has come to life. Prototype 4 is the first to show functionality across the three basic tests I've outlined with the robot's problem statement. This is the first version of the robot to do so, and due to its testing success, this is the final self-balancing robot prototype.
 
 The first test was the balancing capability test, that demands 60 seconds of continuously-sustained balancing from the prototype. The first and third trials ran for around 100 seconds, both of which were better than all testing data from the three previous prototypes. The second, fourth, and fifth trials did not fall at all; they found a "balance point" where the motors simply did not move due to the prototype finding an angle of perfect balance. This is a dramatic jump from previous prototypes, as they continued oscillating until eventually falling down.
